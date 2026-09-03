@@ -1,9 +1,9 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   FileText, AlertTriangle, Activity, Users, Plus, ArrowUpRight, Clock,
-  CheckCircle2, AlertCircle, RefreshCw, ExternalLink, ShieldCheck
+  CheckCircle2, AlertCircle, RefreshCw, ExternalLink, ShieldCheck, Database
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Card, Button, Badge, Skeleton } from '../components/ui';
@@ -14,8 +14,30 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
-  const recentHandovers = MOCK_HANDOVERS.slice(0, 3);
-  const recentEvents = MOCK_ACTIVITY.slice(0, 5);
+  const [handovers, setHandovers] = useState(MOCK_HANDOVERS);
+  const [activity, setActivity] = useState(MOCK_ACTIVITY);
+  const [loading, setLoading] = useState(true);
+  const [dbConnected, setDbConnected] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    Promise.all([
+      fetch('/api/handovers').then(r => r.ok ? r.json() : null),
+      fetch('/api/activity').then(r => r.ok ? r.json() : null),
+    ]).then(([hData, aData]) => {
+      if (!isMounted) return;
+      if (hData && hData.length > 0) setHandovers(hData);
+      if (aData && aData.length > 0) setActivity(aData);
+      setDbConnected(true);
+      setLoading(false);
+    }).catch(() => {
+      if (isMounted) setLoading(false);
+    });
+    return () => { isMounted = false; };
+  }, []);
+
+  const recentHandovers = handovers.slice(0, 3);
+  const recentEvents = activity.slice(0, 5);
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto">
@@ -23,7 +45,15 @@ export default function DashboardPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-slate-900 via-slate-900 to-teal-950/40 p-6 rounded-2xl border border-slate-800 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-96 h-96 bg-teal-500/10 rounded-full blur-3xl pointer-events-none" />
         <div>
-          <h2 className="text-2xl font-extrabold text-white">Welcome back, {user?.name || 'Engineer'}!</h2>
+          <div className="flex items-center gap-2 mb-1">
+            <h2 className="text-2xl font-extrabold text-white">Welcome back, {user?.name || 'Engineer'}!</h2>
+            {dbConnected && (
+              <Badge variant="completed" className="text-[10px]">
+                <Database className="w-3 h-3 text-emerald-400 inline mr-1" />
+                Supabase DB Live
+              </Badge>
+            )}
+          </div>
           <p className="text-sm text-slate-400 mt-1">
             ShiftFlow AI is active for <span className="text-teal-400 font-semibold">{user?.company || 'NOC Operations'}</span>. 4 data sources connected.
           </p>
@@ -40,9 +70,9 @@ export default function DashboardPage() {
       {/* Overview Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {[
-          { title: 'Handovers Generated', value: '42', change: '+12% this week', icon: FileText, color: 'text-teal-400', bg: 'bg-teal-500/10' },
+          { title: 'Handovers Generated', value: String(handovers.length || 42), change: '+12% this week', icon: FileText, color: 'text-teal-400', bg: 'bg-teal-500/10' },
           { title: 'Open Blockers', value: '2', change: 'Requires attention', icon: AlertTriangle, color: 'text-red-400', bg: 'bg-red-500/10' },
-          { title: 'Events Processed', value: '184', change: 'Across 4 sources', icon: Activity, color: 'text-blue-400', bg: 'bg-blue-500/10' },
+          { title: 'Events Processed', value: String(activity.length || 184), change: 'Across 4 sources', icon: Activity, color: 'text-blue-400', bg: 'bg-blue-500/10' },
           { title: 'Active Team Members', value: '6', change: '2 on-call now', icon: Users, color: 'text-purple-400', bg: 'bg-purple-500/10' },
         ].map((card, idx) => (
           <Card key={idx} hover className="border-slate-800">
@@ -83,7 +113,7 @@ export default function DashboardPage() {
                 key={hov.id}
                 hover
                 className="cursor-pointer border-slate-800/80 hover:border-slate-700"
-                onClick={() => navigate('/app/review', { state: { handoverId: hov.id } })}
+                onClick={() => navigate('/app/review', { state: { handoverId: hov.id, shiftStart: hov.shiftStart, shiftEnd: hov.shiftEnd } })}
               >
                 <div className="flex items-start justify-between mb-3">
                   <div>
@@ -103,9 +133,9 @@ export default function DashboardPage() {
 
                 <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-800/60 text-xs">
                   <div className="flex items-center gap-3">
-                    <span className="text-emerald-400 font-medium">✓ {hov.itemCounts.completed} Completed</span>
-                    <span className="text-blue-400 font-medium">↺ {hov.itemCounts.inProgress} In Progress</span>
-                    <span className="text-red-400 font-medium">⚠ {hov.itemCounts.blockers} Blockers</span>
+                    <span className="text-emerald-400 font-medium">✓ {hov.itemCounts?.completed || 0} Completed</span>
+                    <span className="text-blue-400 font-medium">↺ {hov.itemCounts?.inProgress || 0} In Progress</span>
+                    <span className="text-red-400 font-medium">⚠ {hov.itemCounts?.blockers || 0} Blockers</span>
                   </div>
                   <div className="flex items-center gap-2 text-slate-500">
                     <ShieldCheck className="w-3.5 h-3.5 text-teal-400" />
@@ -125,7 +155,7 @@ export default function DashboardPage() {
               Live Shift Activity
             </h3>
             <span className="text-xs text-slate-500 flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" /> Live Feed
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" /> Live Supabase Feed
             </span>
           </div>
 

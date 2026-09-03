@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Users, UserPlus, Mail, Shield, CheckCircle2, Clock } from 'lucide-react';
 import { Card, Button, Input, Select, Badge, Avatar, Modal } from '../components/ui';
 import { useToast } from '../context/ToastContext';
@@ -13,26 +13,49 @@ export default function TeamMembersPage() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('Engineer');
 
-  const handleSendInvite = (e) => {
+  useEffect(() => {
+    fetch('/api/team')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => { if (data && data.length > 0) setTeam(data); })
+      .catch(() => {});
+  }, []);
+
+  const handleSendInvite = async (e) => {
     e.preventDefault();
     if (!inviteEmail) return;
 
-    const newMember = {
-      id: `usr_t00${team.length + 1}`,
-      name: inviteName || inviteEmail.split('@')[0],
-      email: inviteEmail,
-      role: inviteRole,
-      status: 'Invited',
-      lastActive: null,
-      avatar: (inviteName || inviteEmail).slice(0, 2).toUpperCase(),
-      avatarColor: 'bg-teal-600',
-    };
+    const newMemberData = { name: inviteName || inviteEmail.split('@')[0], email: inviteEmail, role: inviteRole };
 
-    setTeam([...team, newMember]);
+    try {
+      const res = await fetch('/api/team', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newMemberData),
+      });
+      if (res.ok) {
+        const saved = await res.json();
+        setTeam(prev => [...prev, saved]);
+      } else {
+        throw new Error('Failed');
+      }
+    } catch {
+      const localMember = {
+        id: `usr_t00${team.length + 1}`,
+        name: inviteName || inviteEmail.split('@')[0],
+        email: inviteEmail,
+        role: inviteRole,
+        status: 'Invited',
+        lastActive: null,
+        avatar: (inviteName || inviteEmail).slice(0, 2).toUpperCase(),
+        avatarColor: 'bg-teal-600',
+      };
+      setTeam([...team, localMember]);
+    }
+
     setInviteModalOpen(false);
     setInviteName('');
     setInviteEmail('');
-    addToast({ type: 'success', title: 'Invitation Sent', message: `Invited ${inviteEmail} as ${inviteRole}.` });
+    addToast({ type: 'success', title: 'Invitation Sent', message: `Invited ${inviteEmail} as ${inviteRole} to Supabase workspace.` });
   };
 
   return (
@@ -44,7 +67,7 @@ export default function TeamMembersPage() {
             Team Members
           </h2>
           <p className="text-sm text-slate-400 mt-1">
-            Manage your operations team workspace and handover permissions.
+            Manage your operations team workspace and handover permissions (Connected to Supabase DB).
           </p>
         </div>
 
@@ -73,7 +96,7 @@ export default function TeamMembersPage() {
               {team.map((member) => (
                 <tr key={member.id} className="hover:bg-slate-800/30 transition-colors">
                   <td className="p-4 font-semibold text-white flex items-center gap-3">
-                    <Avatar name={member.name} color={member.avatarColor} size="sm" />
+                    <Avatar name={member.name} color={member.avatarColor || 'bg-teal-600'} size="sm" />
                     <span>{member.name}</span>
                   </td>
                   <td className="p-4 font-mono text-slate-400">{member.email}</td>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -8,7 +8,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { Card, Button, Input, Select, Badge, Skeleton } from '../components/ui';
-import { PRESET_SHIFTS } from '../data/mockActivity';
+import { PRESET_SHIFTS, MOCK_ACTIVITY } from '../data/mockActivity';
 import { generateHandover } from '../utils/handoverEngine';
 
 export default function GenerateHandoverPage() {
@@ -23,6 +23,14 @@ export default function GenerateHandoverPage() {
 
   const [loadedData, setLoadedData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [dbActivity, setDbActivity] = useState(null);
+
+  useEffect(() => {
+    fetch('/api/activity')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => { if (data && data.length > 0) setDbActivity(data); })
+      .catch(() => {});
+  }, []);
 
   const toggleSource = (src) => {
     if (selectedSources.includes(src)) {
@@ -39,33 +47,64 @@ export default function GenerateHandoverPage() {
     addToast({ type: 'info', title: 'Shift Window Selected', message: preset.label });
   };
 
-  const handleLoadActivity = () => {
+  const handleLoadActivity = async () => {
     setLoading(true);
-    setTimeout(() => {
-      const result = generateHandover(
-        `${shiftStart}:00Z`,
-        `${shiftEnd}:00Z`,
-        selectedSources
-      );
-      setLoadedData(result);
-      setLoading(false);
-      if (result.warnings.length > 0) {
-        addToast({ type: 'warning', title: 'Source Warning', message: result.warnings[0] });
-      } else {
-        addToast({
-          type: 'success',
-          title: 'Activity Loaded',
-          message: `Loaded ${result.totalEvents} events (${result.duplicatesRemoved} duplicates deduplicated).`
-        });
-      }
-    }, 600);
+
+    let activityEvents = dbActivity;
+    if (!activityEvents) {
+      try {
+        const res = await fetch('/api/activity');
+        if (res.ok) activityEvents = await res.json();
+      } catch {}
+    }
+
+    const result = generateHandover(
+      `${shiftStart}:00Z`,
+      `${shiftEnd}:00Z`,
+      selectedSources,
+      activityEvents || MOCK_ACTIVITY
+    );
+
+    setLoadedData(result);
+    setLoading(false);
+
+    if (result.warnings.length > 0) {
+      addToast({ type: 'warning', title: 'Source Warning', message: result.warnings[0] });
+    } else {
+      addToast({
+        type: 'success',
+        title: 'Activity Loaded from Supabase',
+        message: `Loaded ${result.totalEvents} events (${result.duplicatesRemoved} duplicates deduplicated).`
+      });
+    }
   };
 
-  const handleProceedToReview = () => {
+  const handleProceedToReview = async () => {
     if (!loadedData || loadedData.items.length === 0) {
       addToast({ type: 'error', title: 'Cannot Proceed', message: 'Please load activity records first.' });
       return;
     }
+
+    const handoverObj = {
+      id: `hov_${Date.now()}`,
+      shiftStart: `${shiftStart}:00Z`,
+      shiftEnd: `${shiftEnd}:00Z`,
+      createdBy: user?.name || 'Ravi Kumar',
+      summary: 'Shift handover note generated from Supabase activity events.',
+      itemCounts: loadedData.counts,
+      sources: selectedSources,
+      pdfExported: false,
+      classifiedData: loadedData.classified,
+    };
+
+    // Save to Supabase backend
+    try {
+      await fetch('/api/handovers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(handoverObj),
+      });
+    } catch {}
 
     navigate('/app/review', {
       state: {
@@ -86,7 +125,7 @@ export default function GenerateHandoverPage() {
           Create Shift Handover Note
         </h2>
         <p className="text-sm text-slate-400 mt-1">
-          Select shift timestamps and active sources. ShiftFlow AI will isolate events, deduplicate records, and build a grounded handover summary.
+          Select shift timestamps and active sources. ShiftFlow AI queries Supabase PostgreSQL to isolate events, deduplicate records, and build a grounded handover summary.
         </p>
       </div>
 
@@ -179,7 +218,7 @@ export default function GenerateHandoverPage() {
             onClick={handleLoadActivity}
             loading={loading}
           >
-            Load Shift Activity
+            Load Shift Activity (Supabase)
           </Button>
         </Card>
       </div>

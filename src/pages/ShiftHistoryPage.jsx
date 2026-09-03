@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   History, Search, Filter, FileText, Download, CheckCircle2,
-  Calendar, Users, ArrowUpRight, ShieldCheck
+  Calendar, Users, ArrowUpRight, ShieldCheck, Database
 } from 'lucide-react';
 import { Card, Button, Input, Select, Badge } from '../components/ui';
 import { MOCK_HANDOVERS } from '../data/mockHandovers';
@@ -11,15 +11,23 @@ import { MOCK_HANDOVERS } from '../data/mockHandovers';
 export default function ShiftHistoryPage() {
   const navigate = useNavigate();
 
+  const [handovers, setHandovers] = useState(MOCK_HANDOVERS);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [sourceFilter, setSourceFilter] = useState('All');
 
-  const filteredHandovers = MOCK_HANDOVERS.filter(hov => {
-    const matchesSearch = hov.createdBy.toLowerCase().includes(search.toLowerCase()) ||
-                          hov.summary.toLowerCase().includes(search.toLowerCase());
+  useEffect(() => {
+    fetch('/api/handovers')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => { if (data && data.length > 0) setHandovers(data); })
+      .catch(() => {});
+  }, []);
+
+  const filteredHandovers = handovers.filter(hov => {
+    const matchesSearch = (hov.createdBy || '').toLowerCase().includes(search.toLowerCase()) ||
+                          (hov.summary || '').toLowerCase().includes(search.toLowerCase());
     const matchesStatus = statusFilter === 'All' || hov.status === statusFilter;
-    const matchesSource = sourceFilter === 'All' || hov.sources.includes(sourceFilter);
+    const matchesSource = sourceFilter === 'All' || (hov.sources && hov.sources.includes(sourceFilter));
     return matchesSearch && matchesStatus && matchesSource;
   });
 
@@ -31,7 +39,7 @@ export default function ShiftHistoryPage() {
           Shift Handover History
         </h2>
         <p className="text-sm text-slate-400 mt-1">
-          Search and filter historical shift handover notes across all operations shifts.
+          Search and filter historical shift handover notes stored in Supabase PostgreSQL.
         </p>
       </div>
 
@@ -104,14 +112,14 @@ export default function ShiftHistoryPage() {
 
               <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-800/60 text-xs">
                 <div className="flex items-center gap-4">
-                  <span className="text-emerald-400 font-medium">✓ {hov.itemCounts.completed} Completed</span>
-                  <span className="text-blue-400 font-medium">↺ {hov.itemCounts.inProgress} In Progress</span>
-                  <span className="text-red-400 font-medium">⚠ {hov.itemCounts.blockers} Blockers</span>
-                  <span className="text-amber-400 font-medium">👁 {hov.itemCounts.watchlist} Watch-list</span>
+                  <span className="text-emerald-400 font-medium">✓ {hov.itemCounts?.completed || 0} Completed</span>
+                  <span className="text-blue-400 font-medium">↺ {hov.itemCounts?.inProgress || 0} In Progress</span>
+                  <span className="text-red-400 font-medium">⚠ {hov.itemCounts?.blockers || 0} Blockers</span>
+                  <span className="text-amber-400 font-medium">👁 {hov.itemCounts?.watchlist || 0} Watch-list</span>
                 </div>
 
                 <div className="flex items-center gap-1.5 text-slate-500">
-                  {hov.sources.map((s, idx) => (
+                  {hov.sources && hov.sources.map((s, idx) => (
                     <span key={idx} className="bg-slate-800 px-2 py-0.5 rounded text-[10px] text-slate-400">
                       {s}
                     </span>
